@@ -11,6 +11,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import init
 import torch
+from torch.nn import DataParallel
 
 __all__ = ['resnext50', 'resnext101', 'resnext152']
 
@@ -86,6 +87,7 @@ class ResNeXt(nn.Module):
         self.cardinality = cardinality
         self.baseWidth = baseWidth
         self.num_classes = num_classes
+        print(self.num_classes)
         self.inplanes = 64
         self.output_size = 64
 
@@ -98,8 +100,13 @@ class ResNeXt(nn.Module):
         self.layer3 = self._make_layer(block, 256, layers[2], 2)
         self.layer4 = self._make_layer(block, 512, layers[3], 2)
         self.avgpool = nn.AvgPool2d(7)      
-        self.fc = nn.Linear(512 * block.expansion, num_classes)
+        self.fc1 = nn.Linear(512 * block.expansion, 1024)
+        self.fc2 = nn.Linear(1024, 64)
+        self.fc3 = nn.Linear(64, 1)
+        # self.softmax = nn.Softmax()
 
+
+        # 这里是在做什么？
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
@@ -144,8 +151,11 @@ class ResNeXt(nn.Module):
         x = self.layer4(x)
         x = self.avgpool(x)
         x = x.view(x.size(0), -1)
-        x = self.fc(x)
-
+        x = self.fc1(x)
+        x = self.fc2(x)
+        x = self.fc3(x)
+        # print(f"x's shape is {x.shape}")
+        # x = self.softmax(x)
         return x
 
 
@@ -153,7 +163,7 @@ def resnext50(baseWidth, cardinality):
     """
     Construct ResNeXt-50.
     """
-    model = ResNeXt(baseWidth, cardinality, [3, 4, 6, 3], 1000)
+    model = ResNeXt(baseWidth, cardinality, [3, 4, 6, 3], 1)
     return model
 
 
@@ -161,7 +171,7 @@ def resnext101(baseWidth, cardinality):
     """
     Construct ResNeXt-101.
     """
-    model = ResNeXt(baseWidth, cardinality, [3, 4, 23, 3], 1000)
+    model = ResNeXt(baseWidth, cardinality, [3, 4, 23, 3], 1)
     return model
 
 
@@ -169,5 +179,9 @@ def resnext152(baseWidth, cardinality):
     """
     Construct ResNeXt-152.
     """
-    model = ResNeXt(baseWidth, cardinality, [3, 8, 36, 3], 1000)
+    model = ResNeXt(baseWidth, cardinality, [3, 8, 36, 3], 1)
     return model
+
+
+res = resnext50(4, 32)
+print(res.num_classes)
