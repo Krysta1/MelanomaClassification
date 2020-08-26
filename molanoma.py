@@ -35,8 +35,8 @@ partition['train'] = negative_data['image_name'].tolist()
 partition['test'] = test_sheet['image_name'].tolist()
 len(partition['train']), len(partition['test'])
 
-train_data = partition['train'][:2000] + positive_data['image_name'].tolist()[:300]
-val_data = partition['train'][2000:2500] + positive_data['image_name'].tolist()[300:]
+train_data = partition['train'][:500] + positive_data['image_name'].tolist()[:500]
+val_data = partition['train'][500:800] + positive_data['image_name'].tolist()[500:]
 
 
 class SkinImageDataset(Dataset):
@@ -91,7 +91,8 @@ class SkinImageDataset(Dataset):
 normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
 transform = transforms.Compose([
-            transforms.RandomResizedCrop(224),
+            transforms.Resize((224, 224)),
+            # transforms.RandomResizedCrop(224, scale=(0.8, 1.0)),
             # transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             # normalize,
@@ -106,7 +107,10 @@ def train(args, model, device, train_loader, optimizer, epoch):
         data, target = data.to(device), target.to(device)
         optimizer.zero_grad()
         output = model(data)
-        loss = nn.CrossEntropyLoss()(output, target)
+        print(output)
+        target.resize((64, 1))
+        print(target.shape)
+        loss = F.binary_cross_entropy_with_logits(output, target)
         loss.backward()
         optimizer.step()
         if batch_idx % args['log_interval'] == 0:
@@ -123,11 +127,15 @@ def test(model, device, test_loader):
     correct = 0
     with torch.no_grad():
         for data, target in test_loader:
-            print(data.shape)
+            # print(data.shape)
             data, target = data.to(device), target.to(device)
             
             output = model(data)
-            test_loss +=  nn.CrossEntropyLoss()(output, target).item()  # sum up batch loss
+            print(f"output is {output}")
+            print(target.shape, output.shape)
+            target.resize((64, 1))
+            
+            test_loss +=  F.binary_cross_entropy_with_logits(output, target).item()  # sum up batch loss
             pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
             correct += pred.eq(target.view_as(pred)).sum().item()
 
@@ -140,13 +148,13 @@ def test(model, device, test_loader):
 
 args = {
     'batch_size': 64,
-    "epochs": 1,
-    "lr": 0.01,
+    "epochs": 5,
+    "lr": 0.1,
     "gamma": 0.7,
     "no_cuda": False,
     "seed": 1,
     "log_interval": 10,
-    "dry_run": False
+    "dry_run": True
 }
 
 use_cuda = not args['no_cuda'] and torch.cuda.is_available()
@@ -164,6 +172,7 @@ if use_cuda:
 resnext = resnext50(4, 32)
 print(resnext.num_classes)
 model = resnext.to(device)
+model = torch.nn.DataParallel(model)
 optimizer = optim.Adadelta(model.parameters(), lr=args['lr'])
 
 train_dataloader = DataLoader(train_dataset, **kwargs)
