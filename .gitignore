@@ -3,3 +3,5 @@ test
 train
 tfrecords
 .vscode
+
+__pycache__
