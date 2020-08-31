@@ -30,7 +30,7 @@ class MelanomaDataset():
         self.meta_features = meta_features
         
     def __getitem__(self, index):
-        im_path = os.path.join(self.imfolder, self.df.iloc[index, 'image_name'] + ".jpg")
+        im_path = os.path.join(self.imfolder, self.df.iloc[index]['image_name'] + ".jpg")
         x = cv2.imread(im_path)
         # meta = np.array(self.df.iloc[index][self.meta_features].values, dtype=np.float32)
 
