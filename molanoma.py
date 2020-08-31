@@ -88,16 +88,17 @@ def train(args, model, device, train_loader, optimizer, epoch):
         output_array = output.cpu().detach().numpy()
         target_array = target.cpu().detach().numpy()
 
-        fpr, tpr, _ = roc_curve(target_array,  output_array)
-        auc = roc_auc_score(target_array,  output_array)
-        result_table.append({'fpr':fpr, 
-                                        'tpr':tpr, 
-                                        'auc':auc}, ignore_index=True)
+        # fpr, tpr, _ = roc_curve(target_array,  output_array)
+        # auc = metrics.roc_auc_score(output.cpu().detach().numpy(), target.cpu().detach().numpy())
 
+        auc = roc_auc_score(target_array,  output_array)
+        # result_table.append({'fpr':fpr, 
+        #                                 'tpr':tpr, 
+        #                                 'auc':auc}, ignore_index=True)
+        print(f" current auc is {auc}")
 
         loss = F.binary_cross_entropy_with_logits(output, target)
-        # auc = metrics.roc_auc_score(output.cpu().detach().numpy(), target.cpu().detach().numpy())
-        # print(f" current auc is {auc}")
+        
 
 
         loss.backward()
@@ -123,9 +124,16 @@ def test(model, device, test_loader):
             # print(f"output is {output}")
             # print(target.shape, output.shape)
             target = target.reshape((16, 1)).float()
-            if index == 1:
-                print("---------------")
-                print(f"current output is {output}")
+            output_array = output.cpu().detach().numpy()
+            target_array = target.cpu().detach().numpy()
+            auc = roc_auc_score(target_array,  output_array)
+            # result_table.append({'fpr':fpr, 
+            #                                 'tpr':tpr, 
+            #                                 'auc':auc}, ignore_index=True)
+            print(f" current auc is {auc}")
+            # if index == 1:
+                # print("---------------")
+                # print(f"current output is {output}")
             # test_loss +=  nn.CrossEntropyLoss()(output, target).item()  # sum up batch loss
             test_loss +=  F.binary_cross_entropy_with_logits(output, target).item()
             pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
@@ -140,8 +148,8 @@ def test(model, device, test_loader):
 
 args = {
     'batch_size': 64,
-    "epochs": 5,
-    "lr": 0.1,
+    "epochs": 100,
+    "lr": 0.001,
     "gamma": 0.7,
     "no_cuda": False,
     "seed": 1,
@@ -164,7 +172,6 @@ if use_cuda:
 
 # resnext = resnext50(4, 32)
 resnext = resnet50()
-
 
 model = resnext.to(device)
 fc_inputs = model.fc.in_features
@@ -191,47 +198,47 @@ transform = transforms.Compose([
 
 
 # load data of Molanoma image
-# train_path = "./jpeg/train/"
-# test_path = "./jpeg/test/"
+train_path = "./jpeg/train/"
+test_path = "./jpeg/test/"
 
-# train_sheet = pd.read_csv("./train.csv")
-# test_sheet = pd.read_csv("./test.csv")
+train_sheet = pd.read_csv("./train.csv")
+test_sheet = pd.read_csv("./test.csv")
 
-# train_sheet['image_path'] = train_path + train_sheet['image_name'] + '.jpg'
-# test_sheet['image_path'] = test_path + train_sheet['image_name'] + '.jpg'
+train_sheet['image_path'] = train_path + train_sheet['image_name'] + '.jpg'
+test_sheet['image_path'] = test_path + train_sheet['image_name'] + '.jpg'
 
-# positive_data = train_sheet[train_sheet['target'] == 1]
-# negative_data = train_sheet[train_sheet['target'] == 0]
+positive_data = train_sheet[train_sheet['target'] == 1]
+negative_data = train_sheet[train_sheet['target'] == 0]
 
-# labels = {}
-# partition = {'train': [], 'test': []}
-# name_to_path = {key: value for key, value in zip(train_sheet['image_name'].tolist(), train_sheet['image_path'].tolist())}
-# labels = {key: value for key, value in zip(train_sheet['image_name'].tolist(), train_sheet['target'].tolist())}
+labels = {}
+partition = {'train': [], 'test': []}
+name_to_path = {key: value for key, value in zip(train_sheet['image_name'].tolist(), train_sheet['image_path'].tolist())}
+labels = {key: value for key, value in zip(train_sheet['image_name'].tolist(), train_sheet['target'].tolist())}
 
-# partition['train'] = negative_data['image_name'].tolist()
-# partition['test'] = test_sheet['image_name'].tolist()
-# len(partition['train']), len(partition['test'])
+partition['train'] = negative_data['image_name'].tolist()
+partition['test'] = test_sheet['image_name'].tolist()
+len(partition['train']), len(partition['test'])
 
-# train_data = partition['train'][:500] + positive_data['image_name'].tolist()[:500]
-# val_data = partition['train'][500:800] + positive_data['image_name'].tolist()[500:]
-# train_dataset = SkinImageDataset(train_data, labels, save=False, transform=transform)
-# val_dataset = SkinImageDataset(val_data, labels, save=False, transform=transform)
-# train_dataloader = DataLoader(train_dataset, **kwargs)
-# print(len(train_dataloader))
-# val_dataloader = DataLoader(val_dataset, **kwargs)
-# print(len(val_dataloader))
+train_data = partition['train'][:500] + positive_data['image_name'].tolist()[:500]
+val_data = partition['train'][500:800] + positive_data['image_name'].tolist()[500:]
+train_dataset = SkinImageDataset(train_data, labels, save=False, transform=transform)
+val_dataset = SkinImageDataset(val_data, labels, save=False, transform=transform)
+train_dataloader = DataLoader(train_dataset, **kwargs)
+print(len(train_dataloader))
+val_dataloader = DataLoader(val_dataset, **kwargs)
+print(len(val_dataloader))
 
 
-# load cifar-2 data
-dataloader = datasets.CIFAR10
-trainset = dataloader(root='./data', train=True, download=True, transform=transform)
-# trainloader = data.DataLoader(trainset, batch_size=128, shuffle=True, num_workers=4)
-testset = dataloader(root='./data', train=False, download=False, transform=transform)
-# testloader = data.DataLoader(testset, batch_size=100, shuffle=False, num_workers=4)
-trainset = [x for x in trainset if x[1]==0 or x[1]==1]
-testset = [x for x in testset if x[1]==0 or x[1]==1]
-train_dataloader = DataLoader(trainset, batch_size=16, shuffle=True, num_workers=1)
-val_dataloader = DataLoader(testset, batch_size=16, shuffle=False, num_workers=1)
+# # load cifar-2 data
+# dataloader = datasets.CIFAR10
+# trainset = dataloader(root='./data', train=True, download=True, transform=transform)
+# # trainloader = data.DataLoader(trainset, batch_size=128, shuffle=True, num_workers=4)
+# testset = dataloader(root='./data', train=False, download=False, transform=transform)
+# # testloader = data.DataLoader(testset, batch_size=100, shuffle=False, num_workers=4)
+# trainset = [x for x in trainset if x[1]==0 or x[1]==1]
+# testset = [x for x in testset if x[1]==0 or x[1]==1]
+# train_dataloader = DataLoader(trainset, batch_size=16, shuffle=True, num_workers=1)
+# val_dataloader = DataLoader(testset, batch_size=16, shuffle=False, num_workers=1)
 
 
 for i in range(100):
@@ -242,28 +249,28 @@ for i in range(100):
 scheduler = StepLR(optimizer, step_size=1, gamma=args['gamma'])
 for epoch in range(1, args['epochs'] + 1):
     train(args, model, device, train_dataloader, optimizer, epoch)
-    test(model, device, val_dataloader)
+    test(model, device, train_dataloader)
     # save_result(model, device, save_dataset)
     scheduler.step()
 
 
-fig = plt.figure(figsize=(8,6))
+# fig = plt.figure(figsize=(8,6))
 
-for i in result_table.index:
-    plt.plot(result_table.loc[i]['fpr'], 
-             result_table.loc[i]['tpr'], 
-             label="{}, AUC={:.3f}".format(i, result_table.loc[i]['auc']))
+# for i in result_table.index:
+#     plt.plot(result_table.loc[i]['fpr'], 
+#              result_table.loc[i]['tpr'], 
+#              label="{}, AUC={:.3f}".format(i, result_table.loc[i]['auc']))
     
-plt.plot([0,1], [0,1], color='orange', linestyle='--')
+# plt.plot([0,1], [0,1], color='orange', linestyle='--')
 
-plt.xticks(np.arange(0.0, 1.1, step=0.1))
-plt.xlabel("Flase Positive Rate", fontsize=15)
+# plt.xticks(np.arange(0.0, 1.1, step=0.1))
+# plt.xlabel("Flase Positive Rate", fontsize=15)
 
-plt.yticks(np.arange(0.0, 1.1, step=0.1))
-plt.ylabel("True Positive Rate", fontsize=15)
+# plt.yticks(np.arange(0.0, 1.1, step=0.1))
+# plt.ylabel("True Positive Rate", fontsize=15)
 
-plt.title('ROC Curve Analysis', fontweight='bold', fontsize=15)
-# plt.legend(prop={'size':13}, loc='lower right')
+# plt.title('ROC Curve Analysis', fontweight='bold', fontsize=15)
+# # plt.legend(prop={'size':13}, loc='lower right')
 
-plt.show()
-fig.savefig('multiple_roc_curve.png')
+# plt.show()
+# fig.savefig('multiple_roc_curve.png')
