@@ -1,7 +1,7 @@
 import os
+import torch
 import numpy as np
 import pandas as pd
-import args_config as args
 from torchvision import transforms
 from PIL import Image,ImageOps,ImageFilter
 from albumentations import (ToFloat, Normalize, VerticalFlip, HorizontalFlip, Compose, Resize,
@@ -9,6 +9,8 @@ from albumentations import (ToFloat, Normalize, VerticalFlip, HorizontalFlip, Co
                             Rotate, RandomResizedCrop, Cutout, ShiftScaleRotate)
 from albumentations.pytorch import ToTensorV2, ToTensor
 import cv2
+import random
+import albumentations
 
 
 class MelanomaDataset():
@@ -32,37 +34,129 @@ class MelanomaDataset():
     def __getitem__(self, index):
         im_path = os.path.join(self.imfolder, self.df.iloc[index]['image_name'] + ".jpg")
         x = cv2.imread(im_path)
+        x = cv2.cvtColor(x, cv2.COLOR_RGB2BGR)
         # meta = np.array(self.df.iloc[index][self.meta_features].values, dtype=np.float32)
 
         if self.transforms:
-            x = self.transforms(x)
-            
-        if self.train:
-            y = self.df.iloc[index]['target']
-            return x, y
+            res = self.transforms(image=x)
+
+            # for albumentations transforms
+            x = res['image'].astype(np.float32)
+
+        # for ablumentations
+        x = x.transpose(2, 0, 1)
+        # data = torch.tensor(x).float()
+
+        if self.meta_features:
+            # print(self.meta_features)
+            data = (torch.tensor(x, dtype=torch.float32), torch.tensor(self.df.iloc[index][self.meta_features], dtype=torch.float32))
         else:
-            return x
+            data = torch.tensor(x, dtype=torch.float32)
+
+        if self.train:
+            # y = self.df.iloc[index]['target']
+
+            # for albumentations transforms
+            y = torch.tensor(self.df.iloc[index]['target'], dtype=torch.float32)
+            return data, y
+        else:
+            return data
     
     def __len__(self):
         return len(self.df)
 
 
-# define transforms for datasets.
-def get_transforms(horizontal=0.5, vertical=0.5):
-    train_transforms = Compose([RandomResizedCrop(height=224, width=224, scale=(0.4, 1.0)),
-             ShiftScaleRotate(rotate_limit=90, scale_limit=[0.8, 1.2]),
-             HorizontalFlip(p=horizontal),
-             VerticalFlip(p=vertical),
-             HueSaturationValue(sat_shift_limit=[0.7, 1.3],
-                                hue_shift_limit=[-0.1, 0.1]),
-             RandomBrightnessContrast(brightness_limit=[0.7, 1.3],
-                                      contrast_limit=[0.7, 1.3]),
-             Normalize(),
-             ToTensorV2()])
+class Microscope():
+    """
+    Cutting out the edges around the center circle of the image
+    Imitating a picture, taken through the microscope
 
-    validation_transforms = Compose([Normalize(),
-                                      ToTensorV2()]) 
+    Args:
+        p (float): probability of applying an augmentation
+    """
 
-    transform = {'train': train_transforms, "validation": validation_transforms}
-    return transform
+    def __init__(self, p: float = 0.5):
+        self.p = p
 
+    def __call__(self, img):
+        """
+        Args:
+            img (PIL Image): Image to apply transformation to.
+
+        Returns:
+            PIL Image: Image with transformation.
+        """
+        if random.random() < self.p:
+            circle = cv2.circle((np.ones(img.shape) * 255).astype(np.uint8),  # image placeholder
+                                (img.shape[0] // 2, img.shape[1] // 2),  # center point of circle
+                                random.randint(img.shape[0] // 2 - 3, img.shape[0] // 2 + 15),  # radius
+                                (0, 0, 0),  # color
+                                -1)
+
+            mask = circle - 255
+            img = np.multiply(img, mask)
+
+        return img
+
+    def __repr__(self):
+        return f'{self.__class__.__name__}(p={self.p})'
+
+
+def get_transforms(type="albumentations"):
+    if type == "albumentations":
+        train_transforms = albumentations.Compose([
+            albumentations.Transpose(p=0.5),
+            albumentations.OneOf([
+                albumentations.VerticalFlip(p=0.5),
+                albumentations.HorizontalFlip(p=0.5),
+            ]),
+            albumentations.OneOf([
+                albumentations.RandomBrightness(limit=0.2, p=0.75),
+                albumentations.RandomContrast(limit=0.2, p=0.75),
+            ]),
+            albumentations.OneOf([
+                albumentations.MotionBlur(blur_limit=5),
+                albumentations.MedianBlur(blur_limit=5),
+                albumentations.GaussianBlur(blur_limit=5),
+                albumentations.GaussNoise(var_limit=(5.0, 30.0)),
+            ], p=0.7),
+
+            albumentations.OneOf([
+                albumentations.OpticalDistortion(distort_limit=1.0),
+                albumentations.GridDistortion(num_steps=5, distort_limit=1.),
+                albumentations.ElasticTransform(alpha=3),
+            ], p=0.7),
+
+            albumentations.OneOf([
+                albumentations.CLAHE(clip_limit=4.0, p=0.7),
+                albumentations.HueSaturationValue(hue_shift_limit=10, sat_shift_limit=20, val_shift_limit=10, p=0.5),
+                albumentations.ShiftScaleRotate(shift_limit=0.1, scale_limit=0.1, rotate_limit=15, border_mode=0,
+                                                p=0.85),
+            ]),
+            albumentations.Resize(256, 256),
+            albumentations.Cutout(max_h_size=int(256 * 0.375), max_w_size=int(256 * 0.375), num_holes=1,
+                                p=0.7),
+            albumentations.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+
+        test_transforms = albumentations.Compose([
+            albumentations.Resize(256, 256),
+            albumentations.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+    else:
+        train_transforms = transforms.Compose([
+            # AdvancedHairAugmentation(hairs_folder='/kaggle/input/melanoma-hairs'),
+            transforms.RandomResizedCrop(size=256, scale=(0.9, 1.0)),
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomVerticalFlip(),
+            Microscope(p=0.5),
+            transforms.Resize((256, 256)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
+        ])
+        test_transforms = transforms.Compose([
+                transforms.Resize((256, 256)),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
+            ])
+    return train_transforms, test_transforms
