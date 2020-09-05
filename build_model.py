@@ -76,9 +76,11 @@ class EfficientNetwork(nn.Module):
         # using meta data from csv file
         meta_data = self.meta(meta_data)
 
-        if prints: print('CSV Data:', meta_data.shape)
+        if prints: print('Meta Data:', meta_data.shape)
         # Concatenate
         image_meta_features = torch.cat((image, meta_data), dim=1)
+
+        if prints: print('Meta Data:', meta_data.shape)
 
         # CLASSIF
         out = self.classification(image_meta_features)

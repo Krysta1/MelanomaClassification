@@ -6,6 +6,7 @@ path = "/home/xinsheng/skinImage/data/jpeg-melanoma-256/"
 
 
 def main(df, save_path):
+
     # generate one hot code for 'anatom_site_general_challenge'
     dummies = pd.get_dummies(df['anatom_site_general_challenge'], dummy_na=True, dtype=np.uint8, prefix='site')
     df = pd.concat([df, dummies], axis=1)
@@ -20,11 +21,16 @@ def main(df, save_path):
     except:
         pass
     df['sex'] = df['sex'].map({"male": 1, "female": 0})
-
+    df['sex'] = df['sex'].fillna(-1)
     # count numbers of images for each patient
     df['n_images'] = df.patient_id.map(df.groupby(['patient_id']).image_name.count())
     
     # normolize age by divide the biggest age in the dataset
+    print(f"before fillna the Nan nums if {df['age_approx'].isna().sum()}")
+    average = df['age_approx'].mean()
+    print(f"average age is {average}")
+    df['age_approx'].fillna(average, inplace=True)
+    print(f"after fillna the Nan nums is {df['age_approx'].isna().sum()}")
     df['age_approx'] /= 90.0
 
     # save to local. 
