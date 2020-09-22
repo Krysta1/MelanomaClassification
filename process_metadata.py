@@ -5,12 +5,15 @@ import numpy as np
 path = "/home/xinsheng/skinImage/data/jpeg-melanoma-256/"
 
 
-def main(df, save_path):
+def main(df, save_path, meta):
 
+    if meta:
+        df['anatom_site_general_challenge'] = df['anatom_site_general_challenge'].map({'lateral torso': 'torso', 'posterior torso': "torso",'anterior torso': "torso", "torso": "torso", "lower extremity": "lower extremity", "upper extremity": "upper extremity", "head/neck": "head/neck", "palms/soles": "palms/soles", "oral/genital": "oral/genital"})
+        # df['anatom_site_general_challenge'].fillna('torso', inplace=True)
     # generate one hot code for 'anatom_site_general_challenge'
     dummies = pd.get_dummies(df['anatom_site_general_challenge'], dummy_na=True, dtype=np.uint8, prefix='site')
     df = pd.concat([df, dummies], axis=1)
-
+    
     # map string values to integer
     try:
         df['diagnosis'] = df['diagnosis'].map({'unknown': 2, 'seborrheic keratosis': 2, 
@@ -24,6 +27,8 @@ def main(df, save_path):
     df['sex'] = df['sex'].fillna(-1)
     # count numbers of images for each patient
     df['n_images'] = df.patient_id.map(df.groupby(['patient_id']).image_name.count())
+    df['n_images'] = df['n_images'].fillna(df['n_images'].mean())
+    print(f"after fillna the Nan nums is {df['n_images'].isna().sum()}")
     
     # normolize age by divide the biggest age in the dataset
     print(f"before fillna the Nan nums if {df['age_approx'].isna().sum()}")
@@ -38,7 +43,7 @@ def main(df, save_path):
 
 
 if __name__ == "__main__":
-    train_df = pd.read_csv(path + "train.csv")
+    train_df = pd.read_csv("/home/xinsheng/skinImage/melanoma-external-malignant-256/train_concat.csv")
     test_df = pd.read_csv(path + "test.csv")
-    main(train_df, "./data/train-jpeg-256.csv")
-    main(test_df, "./data/test-jpeg-256.csv")
+    main(train_df, "./data/train-extra-jpeg-256.csv", True)
+    # main(test_df, "./data/test-jpeg-256.csv")

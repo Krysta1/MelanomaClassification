@@ -11,10 +11,21 @@ from albumentations.pytorch import ToTensorV2, ToTensor
 import cv2
 import random
 import albumentations
+import visdom
+from utils import UnNormalize
+
+
+train_mask_path = "../U-2-Net/test_data/u2net_train_512_results/"
+test_mask_path = "../U-2-Net/test_data/u2net_test_512_results/"
+
+viz = visdom.Visdom()
+viz2 = visdom.Visdom()
+viz3 = visdom.Visdom()
+viz4 = visdom.Visdom()
 
 
 class MelanomaDataset():
-    def __init__(self, df: pd.DataFrame, imfolder: str, train: bool = True, transforms = None, meta_features = None):
+    def __init__(self, df: pd.DataFrame, imfolder: str, type, train: bool = True, transforms = None, meta_features = None):
         """
         Class initialization
         Args:
@@ -30,32 +41,61 @@ class MelanomaDataset():
         self.transforms = transforms
         self.train = train
         self.meta_features = meta_features
+        self.type = type
+        self.count = 0
         
     def __getitem__(self, index):
+        mask_name = self.df.iloc[index]['image_name'] + ".png"
         im_path = os.path.join(self.imfolder, self.df.iloc[index]['image_name'] + ".jpg")
         x = cv2.imread(im_path)
         x = cv2.cvtColor(x, cv2.COLOR_RGB2BGR)
         # meta = np.array(self.df.iloc[index][self.meta_features].values, dtype=np.float32)
 
+        if self.type == "train":
+            mask_path = train_mask_path
+        else:
+            mask_path = test_mask_path
+
+        seed = np.random.randint(2147483647)  # make a seed with numpy generator
+        random.seed(seed)  # apply this seed to img tranfsorms
+        torch.manual_seed(seed)  # needed for torchvision 0.7
         if self.transforms:
             res = self.transforms(image=x)
-
             # for albumentations transforms
             x = res['image'].astype(np.float32)
+        x = albumentations.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])(image=x)['image']
+        # after_transform = torch.tensor(x.transpose(2, 0, 1), dtype=torch.float32)
+        original_image = UnNormalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])(torch.tensor(x.transpose(2, 0, 1), dtype=torch.float32))
+
+        mask = cv2.imread(mask_path + mask_name)
+        original_mask = mask
+        random.seed(seed)  # apply this seed to target tranfsorms
+        torch.manual_seed(seed)  # needed for torchvision 0.7
+        if self.transforms is not None:
+            res = self.transforms(image=mask)
+            mask = res['image'].astype(np.float32)
+        mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY).astype(np.uint8)  # mask should be np.uint8 type or will be an error
+        ret, mask = cv2.threshold(mask, 10, 255, cv2.THRESH_BINARY)
+
+        x = cv2.bitwise_and(x, x, mask=mask)
 
         # for ablumentations
         x = x.transpose(2, 0, 1)
         # data = torch.tensor(x).float()
+        self.count += 1
+        if self.count <= 2:
+            viz.image(original_image)
+            viz2.image(mask, env="mask")
+            viz3.image(x, env="after mask")
+            viz4.image(original_mask, env="original mask")
 
         if self.meta_features:
-            # print(self.meta_features)
             data = (torch.tensor(x, dtype=torch.float32), torch.tensor(self.df.iloc[index][self.meta_features], dtype=torch.float32))
         else:
             data = torch.tensor(x, dtype=torch.float32)
 
         if self.train:
             # y = self.df.iloc[index]['target']
-
             # for albumentations transforms
             y = torch.tensor(self.df.iloc[index]['target'], dtype=torch.float32)
             return data, y
@@ -95,7 +135,6 @@ class Microscope():
 
             mask = circle - 255
             img = np.multiply(img, mask)
-
         return img
 
     def __repr__(self):
@@ -127,21 +166,20 @@ def get_transforms(type="albumentations"):
                 albumentations.ElasticTransform(alpha=3),
             ], p=0.7),
 
-            albumentations.OneOf([
-                albumentations.CLAHE(clip_limit=4.0, p=0.7),
-                albumentations.HueSaturationValue(hue_shift_limit=10, sat_shift_limit=20, val_shift_limit=10, p=0.5),
-                albumentations.ShiftScaleRotate(shift_limit=0.1, scale_limit=0.1, rotate_limit=15, border_mode=0,
-                                                p=0.85),
-            ]),
+            # albumentations.OneOf([
+            #     albumentations.CLAHE(clip_limit=4.0, p=0.7),
+            #     albumentations.HueSaturationValue(hue_shift_limit=10, sat_shift_limit=20, val_shift_limit=10, p=0.5),
+            #     albumentations.ShiftScaleRotate(shift_limit=0.1, scale_limit=0.1, rotate_limit=15, border_mode=0,
+            #                                     p=0.85),
+            # ]),
             albumentations.Resize(256, 256),
-            albumentations.Cutout(max_h_size=int(256 * 0.375), max_w_size=int(256 * 0.375), num_holes=1,
-                                p=0.7),
-            albumentations.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            # albumentations.Cutout(max_h_size=int(256 * 0.375), max_w_size=int(256 * 0.375), num_holes=1, p=0.7),
+            # albumentations.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
 
         test_transforms = albumentations.Compose([
             albumentations.Resize(256, 256),
-            albumentations.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            # albumentations.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
     else:
         train_transforms = transforms.Compose([
@@ -160,3 +198,4 @@ def get_transforms(type="albumentations"):
                 transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
             ])
     return train_transforms, test_transforms
+
